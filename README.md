@@ -8,16 +8,12 @@ This Jupyter-based app is intended to be run with [AiiDAlab](https://www.materia
 
 Assuming that the app was registered, you can install it directly via the app store in AiiDAlab or on the command line with:
 ```
-aiidalab install mfa-cscs
+aiidalab install aiidalab-mfa-cscs
 ```
 Otherwise, you can also install it directly from the repository:
 ```
-aiidalab install mfa-cscs@https://github.com/aiidalab/mfa-cscs
+aiidalab install aiidalab-mfa-cscs@git+https://github.com/aiidalab/aiidalab-mfa-cscs
 ```
-
-## Usage
-
-Here may go a few sreenshots / animated gifs illustrating how to use the app.
 
 ## License
 
