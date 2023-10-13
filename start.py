@@ -99,13 +99,15 @@ class MfaAuthenicathionWidget(ipw.VBox):
 
         # Add the key to the ssh-agent.
         self.add_key_to_ssh_agent()
-        
+
         self.output.value = "The keys were updated 👍"
 
     def add_key_to_ssh_agent(self):
         """Add the key to the ssh-agent."""
         subprocess.run(
-            ["ssh-add", "-t", "1d", str(self.private_key_file)], encoding="utf-8", check=True,
+            ["ssh-add", "-t", "1d", str(self.private_key_file)],
+            encoding="utf-8",
+            check=True,
         )
 
     def get_keys(self):
