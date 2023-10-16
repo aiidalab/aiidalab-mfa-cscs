@@ -87,16 +87,21 @@ class MfaAuthenicathionWidget(ipw.VBox):
         self.refresh_info()
 
     def setup(self, _=None):
-        self.output.value = "Trying to get the keys..."
-        try:
-            keys = self.get_keys()
-        except InputNotProvidedError as exc:
-            self.output.value = (
-                f"""<div class="alert alert-danger" role="alert">{str(exc)}</div>"""
-            )
-            return
-        self.store_the_keys(*keys)
-        self.output.value = "The keys were updated 👍"
+        """The callback for the setup button."""
+        # if the key is still valid, do not update it
+        if self.key_is_valid():
+            self.output.value = "The key is still valid 👍"
+        else:
+            self.output.value = "Trying to get the keys..."
+            try:
+                keys = self.get_keys()
+            except InputNotProvidedError as exc:
+                self.output.value = (
+                    f"""<div class="alert alert-danger" role="alert">{str(exc)}</div>"""
+                )
+                return
+            self.store_the_keys(*keys)
+            self.output.value = "The keys were updated 👍"
 
     def get_keys(self):
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
