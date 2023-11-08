@@ -12,6 +12,7 @@ import requests
 
 __version__ = "0.0.1"
 
+
 class UnableToFetchKeyError(Exception):
     """Exception raised when unable to fetch the key."""
 
