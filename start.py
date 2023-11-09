@@ -10,6 +10,8 @@ import humanize
 import ipywidgets as ipw
 import requests
 
+__version__ = "v2023.0000"
+
 
 class UnableToFetchKeyError(Exception):
     """Exception raised when unable to fetch the key."""
