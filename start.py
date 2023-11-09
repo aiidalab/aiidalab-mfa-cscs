@@ -10,7 +10,7 @@ import humanize
 import ipywidgets as ipw
 import requests
 
-__version__ = "0.0.1"
+__version__ = "v2023.0000"
 
 
 class UnableToFetchKeyError(Exception):
