@@ -102,6 +102,9 @@ class MfaAuthenicathionWidget(ipw.VBox):
         # Add the key to the ssh-agent.
         self.add_key_to_ssh_agent()
 
+        # ssh-keyscan to add proxy server to known hosts.
+        self.add_proxy_server_to_known_hosts()
+
         self.output.value = "The keys were updated 👍"
 
     def add_key_to_ssh_agent(self):
@@ -111,6 +114,27 @@ class MfaAuthenicathionWidget(ipw.VBox):
             encoding="utf-8",
             check=True,
         )
+
+    @staticmethod
+    def add_proxy_server_to_known_hosts():
+        """Run ssh-keyscan to the ela proxy server to `~/.ssh/known_hosts`"""
+        output = subprocess.run(
+            ["ssh-keyscan", "ela.cscs.ch"],
+            encoding="utf-8",
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        # create the known_hosts file if it does not exist
+        known_hosts_file = Path.home() / ".ssh" / "known_hosts"
+        if not known_hosts_file.exists():
+            known_hosts_file.touch()
+
+        with open(Path.home() / ".ssh" / "known_hosts", "r+") as fh:
+            # Check if the key is already in the file, if not, add it.
+            if output.stdout not in fh.read():
+                fh.write(output.stdout)
 
     def get_keys(self):
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
