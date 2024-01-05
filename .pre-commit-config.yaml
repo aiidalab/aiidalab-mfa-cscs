@@ -4,7 +4,7 @@ ci:
 
 repos:
     - repo: https://github.com/pre-commit/pre-commit-hooks
-      rev: v4.4.0
+      rev: v4.5.0
       hooks:
           - id: end-of-file-fixer
             exclude: ^.*data/
@@ -12,7 +12,7 @@ repos:
           - id: check-yaml
           - id: check-added-large-files
     - repo: https://github.com/pycqa/isort
-      rev: 5.12.0
+      rev: 5.13.2
       hooks:
           - id: isort
             args: [--profile, black, --filter-files]
@@ -21,12 +21,12 @@ repos:
       hooks:
           - id: autoflake
     - repo: https://github.com/asottile/pyupgrade
-      rev: v3.13.0
+      rev: v3.15.0
       hooks:
           - id: pyupgrade
             args: [--py37-plus]
     - repo: https://github.com/psf/black
-      rev: 23.9.1
+      rev: 23.12.1
       hooks:
           - id: black
             language_version: python3
@@ -45,7 +45,7 @@ repos:
                 - pyflakes
                 - tryceratops
     - repo: https://github.com/pre-commit/mirrors-mypy
-      rev: v1.5.1
+      rev: v1.8.0
       hooks:
           - id: mypy
             additional_dependencies:
@@ -58,6 +58,6 @@ repos:
       hooks:
           - id: yamlfmt
     - repo: https://github.com/asottile/setup-cfg-fmt
-      rev: v2.4.0
+      rev: v2.5.0
       hooks:
           - id: setup-cfg-fmt
