@@ -33,7 +33,9 @@ class HeaderWarning(ipw.HTML):
         self.layout = ipw.Layout(display="none", width="600px")
 
     def show(self, message, danger_level="alert-danger"):
-        self.value = f"""<div class="alert {danger_level}" role="alert">{message}</div>"""
+        self.value = (
+            f"""<div class="alert {danger_level}" role="alert">{message}</div>"""
+        )
         self.layout.display = "block"
 
     def hide(self):
@@ -130,10 +132,14 @@ def ensure_keypair(private_key_file):
         subprocess.run(
             [
                 "ssh-keygen",
-                "-t", "ed25519",
-                "-f", str(private_key_file),
-                "-N", "",
-                "-C", "cscs-key",
+                "-t",
+                "ed25519",
+                "-f",
+                str(private_key_file),
+                "-N",
+                "",
+                "-C",
+                "cscs-key",
             ],
             check=True,
             capture_output=True,
@@ -175,7 +181,9 @@ class MfaAuthenicathionWidget(ipw.VBox):
         self.api_key.layout.display = "none"
         self.method.observe(self._on_method_change, names="value")
 
-        self.go_button = ipw.Button(description="Update the key", button_style="primary")
+        self.go_button = ipw.Button(
+            description="Update the key", button_style="primary"
+        )
         self.go_button.on_click(self._on_go)
 
         self.device_info = ipw.HTML()
@@ -210,7 +218,9 @@ class MfaAuthenicathionWidget(ipw.VBox):
         except CscsError as exc:
             self._error(str(exc))
         except subprocess.CalledProcessError as exc:
-            self._error(f"Local command failed: {exc.stderr.decode() if exc.stderr else exc}")
+            self._error(
+                f"Local command failed: {exc.stderr.decode() if exc.stderr else exc}"
+            )
         except requests.RequestException as exc:
             self._error(f"Network error: {exc}")
         finally:
@@ -271,7 +281,9 @@ class MfaAuthenicathionWidget(ipw.VBox):
             encoding="utf-8",
             capture_output=True,
         ).stdout
-        matched = re.search(r"^.*Valid:.*$", output, flags=re.MULTILINE).group(0).split()
+        matched = (
+            re.search(r"^.*Valid:.*$", output, flags=re.MULTILINE).group(0).split()
+        )
         return datetime.fromisoformat(matched[2]), datetime.fromisoformat(matched[4])
 
     def time_left(self):
