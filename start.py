@@ -46,7 +46,7 @@ class TokenPollError(CscsError):
 
 class ApiKeyAuthError(CscsError):
     def __init__(self, status_code, text):
-        super().__init__(f"API-key auth failed: {status_code} {text}")
+        super().__init__("API-key auth failed: ", status_code, text)
 
 
 class SigningError(CscsError):
