@@ -115,7 +115,7 @@ def sign_public_key(access_token, public_key_text, duration="1d"):
         },
         timeout=15,
     )
-    if resp.status_code != 200:
+    if not resp.ok:
         try:
             msg = resp.json().get("message", resp.text)
         except ValueError:
@@ -176,9 +176,25 @@ class MfaAuthenicathionWidget(ipw.VBox):
             options=[("Device login (browser)", "device"), ("API key", "apikey")],
             value="device",
             description="Auth:",
+            layout=ipw.Layout(width="800px", justify_content="space-around"),
+            style={"button_width": "200px"},
         )
         self.api_key = ipw.Password(description="API key:")
         self.api_key.layout.display = "none"
+        self.api_key_help = ipw.HTML(
+            value=(
+                '<div class="alert alert-info">'
+                "<b>For automation only (CI/CD pipelines, scheduled scripts).</b> "
+                "API keys belong to a <em>service account</em>, not a personal account. "
+                "To create one, go to your project on "
+                '<a href="https://portal.cscs.ch/projects/" target="_blank">portal.cscs.ch</a>, '
+                "select the <b>Project</b>, open the <b>Team</b> tab, and add a service account. "
+                "The API key is shown only once at creation — store it securely. "
+                "For interactive use, choose <b>Device login</b> instead."
+                "</div>"
+            ),
+        )
+        self.api_key_help.layout.display = "none"
         self.method.observe(self._on_method_change, names="value")
 
         self.go_button = ipw.Button(
@@ -195,6 +211,7 @@ class MfaAuthenicathionWidget(ipw.VBox):
                 self.key_validity_info,
                 self.method,
                 self.api_key,
+                self.api_key_help,
                 self.go_button,
                 self.device_info,
                 self.output,
@@ -204,7 +221,9 @@ class MfaAuthenicathionWidget(ipw.VBox):
         self.refresh_info()
 
     def _on_method_change(self, change):
-        self.api_key.layout.display = "" if change["new"] == "apikey" else "none"
+        visible = "" if change["new"] == "apikey" else "none"
+        self.api_key.layout.display = visible
+        self.api_key_help.layout.display = visible
 
     def _on_go(self, _):
         self.output.value = ""
@@ -244,8 +263,7 @@ class MfaAuthenicathionWidget(ipw.VBox):
             uri = dc.get("verification_uri_complete") or dc["verification_uri"]
             self.device_info.value = (
                 f'<div class="alert alert-info">'
-                f"Open <a href='{uri}' target='_blank'>{uri}</a> "
-                f"and enter code <b>{dc['user_code']}</b>. Waiting for login…</div>"
+                f"Open <a href='{uri}' target='_blank'>{uri}</a>. Waiting for login…</div>"
             )
             deadline = time.monotonic() + int(dc.get("expires_in", 600))
             access_token = poll_for_token(
@@ -266,6 +284,8 @@ class MfaAuthenicathionWidget(ipw.VBox):
         self.output.value = (
             '<div class="alert alert-success">The keys were updated 👍</div>'
         )
+        time.sleep(3)
+        self.output.value = ""
 
     def _info(self, msg):
         self.output.value = f'<div class="alert alert-info">{msg}</div>'
