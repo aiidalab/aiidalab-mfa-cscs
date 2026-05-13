@@ -31,7 +31,7 @@ repos:
           - id: black
             language_version: python3
     - repo: https://github.com/PyCQA/flake8
-      rev: 7.1.1
+      rev: 7.3.0
       hooks:
           - id: flake8
             args: [--count, --show-source, --statistics]
@@ -40,7 +40,6 @@ repos:
                 - flake8-builtins
                 - flake8-comprehensions
                 - flake8-debugger
-                - flake8-logging-format
                 - pep8-naming
                 - pyflakes
                 - tryceratops

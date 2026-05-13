@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import re
 import subprocess
@@ -21,8 +22,41 @@ PKCE_CLIENT_ID = "authx-cli"
 DEFAULT_HEADERS = {"X-Client-Type": "cli"}
 
 
+log = logging.getLogger(__name__)
+
+
 class CscsError(Exception):
     """Raised on any auth/signing failure surfaced to the user."""
+
+
+class DeviceCodeExpiredError(CscsError):
+    def __init__(self):
+        super().__init__("Device code expired before login completed.")
+
+
+class DeviceTimeoutError(CscsError):
+    def __init__(self):
+        super().__init__("Timed out waiting for device authorization.")
+
+
+class TokenPollError(CscsError):
+    def __init__(self, response):
+        super().__init__(f"Token endpoint returned: {response}")
+
+
+class ApiKeyAuthError(CscsError):
+    def __init__(self, status_code, text):
+        super().__init__(f"API-key auth failed: {status_code} {text}")
+
+
+class SigningError(CscsError):
+    def __init__(self, msg):
+        super().__init__(f"Signing failed: {msg}")
+
+
+class ApiKeyRequiredError(CscsError):
+    def __init__(self):
+        super().__init__("API key is required.")
 
 
 class HeaderWarning(ipw.HTML):
@@ -87,11 +121,11 @@ def poll_for_token(token_endpoint, device_code, interval, deadline):
         elif err == "slow_down":
             interval += 5
         elif err == "expired_token":
-            raise CscsError("Device code expired before login completed.")
+            raise DeviceCodeExpiredError()
         else:
-            raise CscsError(f"Token endpoint returned: {err or resp.text}")
+            raise TokenPollError(err or resp.text)
         time.sleep(interval)
-    raise CscsError("Timed out waiting for device authorization.")
+    raise DeviceTimeoutError()
 
 
 def token_from_api_key(api_key):
@@ -101,7 +135,7 @@ def token_from_api_key(api_key):
         timeout=10,
     )
     if resp.status_code != 200:
-        raise CscsError(f"API-key auth failed: {resp.status_code} {resp.text}")
+        raise ApiKeyAuthError(resp.status_code, resp.text)
     return resp.json()["access_token"]
 
 
@@ -120,7 +154,7 @@ def sign_public_key(access_token, public_key_text, duration="1d"):
             msg = resp.json().get("message", resp.text)
         except ValueError:
             msg = resp.text
-        raise CscsError(f"Signing failed: {msg}")
+        raise SigningError(msg)
     return resp.json()["sshKey"]["publicKey"]
 
 
@@ -252,7 +286,7 @@ class MfaAuthenicathionWidget(ipw.VBox):
 
         if self.method.value == "apikey":
             if not self.api_key.value:
-                raise CscsError("API key is required.")
+                raise ApiKeyRequiredError()
             self._info("Exchanging API key for access token…")
             access_token = token_from_api_key(self.api_key.value)
         else:
@@ -322,7 +356,7 @@ class MfaAuthenicathionWidget(ipw.VBox):
             try:
                 self.refresh_info()
             except Exception:
-                pass
+                log.debug("refresh_info failed", exc_info=True)
             await asyncio.sleep(period)
 
     def refresh_info(self):
