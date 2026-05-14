@@ -353,7 +353,9 @@ class MfaAuthenicathionWidget(ipw.VBox):
                 widget.value = value
 
         try:
-            update = loop.run_in_executor(None, self._do_update, method, api_key, report)
+            update = loop.run_in_executor(
+                None, self._do_update, method, api_key, report
+            )
             while not update.done():
                 apply_progress()
                 await asyncio.sleep(0.1)
@@ -368,9 +370,7 @@ class MfaAuthenicathionWidget(ipw.VBox):
         except CscsError as exc:
             self._error(str(exc))
         except subprocess.CalledProcessError as exc:
-            self._error(
-                f"Local command failed: {exc.stderr if exc.stderr else exc}"
-            )
+            self._error(f"Local command failed: {exc.stderr if exc.stderr else exc}")
         except subprocess.TimeoutExpired as exc:
             self._error(f"Local command timed out: {' '.join(exc.cmd)}")
         except requests.RequestException as exc:
