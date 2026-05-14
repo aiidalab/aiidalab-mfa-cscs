@@ -12,7 +12,7 @@ import humanize
 import ipywidgets as ipw
 import requests
 
-__version__ = "v2023.1003"
+__version__ = "v2026.1004"
 
 # Endpoints — mirror src/config.rs in eth-cscs/cscs-key. Re-sync if CSCS
 # changes the gateway paths.
