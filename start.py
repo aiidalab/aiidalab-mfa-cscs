@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import queue
 import re
 import subprocess
 import time
@@ -57,6 +58,29 @@ class SigningError(CscsError):
 class ApiKeyRequiredError(CscsError):
     def __init__(self):
         super().__init__("API key is required.")
+
+
+class PublicKeyMismatchError(CscsError):
+    def __init__(self):
+        super().__init__(
+            "The public key ~/.ssh/cscs-key.pub does not match the private key "
+            "~/.ssh/cscs-key. Open an AiiDAlab terminal, paste this command, "
+            "and press Return:<br><code>cd ~/.ssh && mv cscs-key.pub "
+            "cscs-key.pub.bak</code><br>Then return here and click "
+            "'Update the key' again."
+        )
+
+
+class MissingPrivateKeyError(CscsError):
+    def __init__(self):
+        super().__init__(
+            "The private key ~/.ssh/cscs-key is missing, but the stale public "
+            "key ~/.ssh/cscs-key.pub exists. If you do not have a backup of "
+            "cscs-key, open an AiiDAlab terminal, paste this command, and "
+            "press Return:<br><code>cd ~/.ssh && rm cscs-key.pub</code><br>"
+            "Then return here and click 'Update the key' again to create a "
+            "new key pair."
+        )
 
 
 class HeaderWarning(ipw.HTML):
@@ -158,11 +182,33 @@ def sign_public_key(access_token, public_key_text, duration="1d"):
     return resp.json()["sshKey"]["publicKey"]
 
 
+def _public_key_material(public_key_text):
+    parts = public_key_text.strip().split()
+    if len(parts) < 2:
+        raise PublicKeyMismatchError()
+    return parts[:2]
+
+
+def _derive_public_key(private_key_file):
+    result = subprocess.run(
+        ["ssh-keygen", "-y", "-f", str(private_key_file)],
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+    )
+    public_key = result.stdout
+    if not public_key.endswith("\n"):
+        public_key += "\n"
+    return public_key
+
+
 def ensure_keypair(private_key_file):
-    """Generate ~/.ssh/cscs-key if it doesn't exist. Returns public key text."""
+    """Ensure ~/.ssh/cscs-key{,.pub} exist and match. Returns public key text."""
     private_key_file.parent.mkdir(mode=0o700, exist_ok=True)
     pub_file = private_key_file.with_suffix(".pub")
-    if not private_key_file.exists() or not pub_file.exists():
+    if not private_key_file.exists():
+        if pub_file.exists():
+            raise MissingPrivateKeyError()
         subprocess.run(
             [
                 "ssh-keygen",
@@ -178,22 +224,45 @@ def ensure_keypair(private_key_file):
             check=True,
             capture_output=True,
         )
-    return pub_file.read_text()
+
+    derived_public_key = _derive_public_key(private_key_file)
+    if not pub_file.exists():
+        pub_file.write_text(derived_public_key)
+        os.chmod(pub_file, 0o644)
+        return derived_public_key
+
+    public_key = pub_file.read_text()
+    if _public_key_material(public_key) != _public_key_material(derived_public_key):
+        raise PublicKeyMismatchError()
+    return public_key
 
 
 def add_proxy_server_to_known_hosts():
-    output = subprocess.run(
-        ["ssh-keyscan", "ela.cscs.ch"],
-        encoding="utf-8",
-        check=True,
-        capture_output=True,
-    ).stdout
     known_hosts = Path.home() / ".ssh" / "known_hosts"
     known_hosts.touch(exist_ok=True)
     existing = known_hosts.read_text()
-    if output not in existing:
-        with open(known_hosts, "a") as fh:
-            fh.write(output)
+    if "ela.cscs.ch" in existing:
+        return True
+
+    try:
+        result = subprocess.run(
+            ["ssh-keyscan", "ela.cscs.ch"],
+            encoding="utf-8",
+            capture_output=True,
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        log.debug("ssh-keyscan timed out", exc_info=True)
+        return False
+
+    output = result.stdout
+    if not output.strip():
+        log.debug("ssh-keyscan did not return a host key: %s", result.stderr)
+        return False
+
+    with open(known_hosts, "a") as fh:
+        fh.write(output)
+    return True
 
 
 class MfaAuthenicathionWidget(ipw.VBox):
@@ -266,63 +335,100 @@ class MfaAuthenicathionWidget(ipw.VBox):
         asyncio.ensure_future(self._run())
 
     async def _run(self):
+        loop = asyncio.get_event_loop()
+        method = self.method.value
+        api_key = self.api_key.value
+        progress = queue.Queue()
+        success = False
+
+        def report(widget, value):
+            progress.put((widget, value))
+
+        def apply_progress():
+            while True:
+                try:
+                    widget, value = progress.get_nowait()
+                except queue.Empty:
+                    return
+                widget.value = value
+
         try:
-            await asyncio.get_event_loop().run_in_executor(None, self._do_update)
+            update = loop.run_in_executor(None, self._do_update, method, api_key, report)
+            while not update.done():
+                apply_progress()
+                await asyncio.sleep(0.1)
+            await update
+            apply_progress()
+            success = True
+            self.refresh_info()
+            self.device_info.value = ""
+            self.output.value = (
+                '<div class="alert alert-success">The keys were updated 👍</div>'
+            )
         except CscsError as exc:
             self._error(str(exc))
         except subprocess.CalledProcessError as exc:
             self._error(
-                f"Local command failed: {exc.stderr.decode() if exc.stderr else exc}"
+                f"Local command failed: {exc.stderr if exc.stderr else exc}"
             )
+        except subprocess.TimeoutExpired as exc:
+            self._error(f"Local command timed out: {' '.join(exc.cmd)}")
         except requests.RequestException as exc:
             self._error(f"Network error: {exc}")
         finally:
             self.go_button.disabled = False
-            self.device_info.value = ""
+            if not success:
+                self.device_info.value = ""
 
-    def _do_update(self):
-        self._info("Preparing keypair…")
+    def _do_update(self, method, api_key, report):
+        self._info("Preparing keypair…", report)
         public_key = ensure_keypair(self.private_key_file)
 
-        if self.method.value == "apikey":
-            if not self.api_key.value:
+        if method == "apikey":
+            if not api_key:
                 raise ApiKeyRequiredError()
-            self._info("Exchanging API key for access token…")
-            access_token = token_from_api_key(self.api_key.value)
+            self._info("Exchanging API key for access token…", report)
+            access_token = token_from_api_key(api_key)
         else:
-            self._info("Discovering OIDC endpoints…")
+            self._info("Discovering OIDC endpoints…", report)
             device_endpoint, token_endpoint = discover_oidc()
-            self._info("Requesting device code…")
+            self._info("Requesting device code…", report)
             dc = request_device_code(device_endpoint)
             uri = dc.get("verification_uri_complete") or dc["verification_uri"]
-            self.device_info.value = (
+            report(
+                self.device_info,
                 f'<div class="alert alert-info">'
-                f"Open <a href='{uri}' target='_blank'>{uri}</a>. Waiting for login…</div>"
+                f"Open <a href='{uri}' target='_blank'>{uri}</a>. Waiting for login…</div>",
             )
             deadline = time.monotonic() + int(dc.get("expires_in", 600))
             access_token = poll_for_token(
                 token_endpoint, dc["device_code"], int(dc.get("interval", 5)), deadline
             )
 
-        self._info("Signing public key…")
+        self._info("Signing public key…", report)
         cert = sign_public_key(access_token, public_key)
         self.cert_file.write_text(cert)
         os.chmod(self.cert_file, 0o644)
 
+        self._info("Adding key to ssh-agent…", report)
         subprocess.run(
             ["ssh-add", "-t", "1d", str(self.private_key_file)],
             check=True,
             encoding="utf-8",
+            capture_output=True,
+            timeout=15,
         )
-        add_proxy_server_to_known_hosts()
-        self.output.value = (
-            '<div class="alert alert-success">The keys were updated 👍</div>'
-        )
-        time.sleep(3)
-        self.output.value = ""
+        if add_proxy_server_to_known_hosts():
+            self._info("known_hosts is ready…", report)
+        else:
+            log.debug("Skipping known_hosts update for ela.cscs.ch")
 
-    def _info(self, msg):
-        self.output.value = f'<div class="alert alert-info">{msg}</div>'
+    def _info(self, msg, report=None):
+        value = f'<div class="alert alert-info">{msg}</div>'
+        if report is None:
+            self.output.value = value
+        else:
+            report(self.output, value)
 
     def _error(self, msg):
         self.output.value = f'<div class="alert alert-danger">{msg}</div>'
