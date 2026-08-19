@@ -1,3 +1,4 @@
+import os
 import subprocess
 import tempfile
 import unittest
@@ -65,6 +66,36 @@ class EnsureKeypairTests(unittest.TestCase):
                 start.ensure_keypair(self.private_key)
 
         run.assert_not_called()
+
+    def test_repairs_existing_cscs_key_permissions(self):
+        cert_file = self.private_key.with_name("cscs-key-cert.pub")
+        self.private_key.parent.chmod(0o777)
+        self.private_key.write_text("private")
+        self.public_key.write_text("public")
+        cert_file.write_text("certificate")
+        for path in (self.private_key, self.public_key, cert_file):
+            path.chmod(0o777)
+
+        repaired = start.repair_key_permissions(self.private_key, cert_file)
+
+        self.assertEqual(self.private_key.parent.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(self.private_key.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.public_key.stat().st_mode & 0o777, 0o644)
+        self.assertEqual(cert_file.stat().st_mode & 0o777, 0o644)
+        self.assertEqual(
+            set(repaired),
+            {self.private_key.parent, self.private_key, self.public_key, cert_file},
+        )
+
+    def test_refuses_symbolic_link_key(self):
+        target = self.private_key.with_name("target-key")
+        target.write_text("private")
+        os.symlink(target, self.private_key)
+
+        with self.assertRaises(start.UnsafeKeyPathError):
+            start.repair_key_permissions(self.private_key)
+
+        self.assertEqual(target.stat().st_mode & 0o777, 0o644)
 
 
 if __name__ == "__main__":

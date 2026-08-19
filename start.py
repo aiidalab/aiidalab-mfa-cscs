@@ -3,6 +3,7 @@ import logging
 import os
 import queue
 import re
+import stat
 import subprocess
 import time
 from datetime import datetime, timedelta
@@ -81,6 +82,11 @@ class MissingPrivateKeyError(CscsError):
             "Then return here and click 'Update the key' again to create a "
             "new key pair."
         )
+
+
+class UnsafeKeyPathError(CscsError):
+    def __init__(self, path, reason):
+        super().__init__(f"Cannot secure {path}: {reason}.")
 
 
 class HeaderWarning(ipw.HTML):
@@ -202,9 +208,45 @@ def _derive_public_key(private_key_file):
     return public_key
 
 
+def repair_key_permissions(private_key_file, cert_file=None):
+    """Tighten permissions on the SSH directory and CSCS-owned key files."""
+    ssh_dir = private_key_file.parent
+    paths_and_modes = [
+        (ssh_dir, 0o700, stat.S_ISDIR),
+        (private_key_file, 0o600, stat.S_ISREG),
+        (private_key_file.with_suffix(".pub"), 0o644, stat.S_ISREG),
+    ]
+    if cert_file is not None:
+        paths_and_modes.append((cert_file, 0o644, stat.S_ISREG))
+
+    repaired = []
+    for path, expected_mode, expected_type in paths_and_modes:
+        if not path.exists() and not path.is_symlink():
+            continue
+        try:
+            path_stat = path.lstat()
+        except OSError as exc:
+            raise UnsafeKeyPathError(path, str(exc)) from exc
+        if stat.S_ISLNK(path_stat.st_mode):
+            raise UnsafeKeyPathError(path, "symbolic links are not supported")
+        if not expected_type(path_stat.st_mode):
+            raise UnsafeKeyPathError(path, "unexpected file type")
+        current_mode = stat.S_IMODE(path_stat.st_mode)
+        if path == ssh_dir:
+            expected_mode |= current_mode & 0o7000
+        if current_mode != expected_mode:
+            try:
+                os.chmod(path, expected_mode, follow_symlinks=False)
+            except OSError as exc:
+                raise UnsafeKeyPathError(path, str(exc)) from exc
+            repaired.append(path)
+    return repaired
+
+
 def ensure_keypair(private_key_file):
     """Ensure ~/.ssh/cscs-key{,.pub} exist and match. Returns public key text."""
     private_key_file.parent.mkdir(mode=0o700, exist_ok=True)
+    repair_key_permissions(private_key_file)
     pub_file = private_key_file.with_suffix(".pub")
     if not private_key_file.exists():
         if pub_file.exists():
@@ -224,6 +266,7 @@ def ensure_keypair(private_key_file):
             check=True,
             capture_output=True,
         )
+        repair_key_permissions(private_key_file)
 
     derived_public_key = _derive_public_key(private_key_file)
     if not pub_file.exists():
@@ -382,6 +425,10 @@ class MfaAuthenicathionWidget(ipw.VBox):
 
     def _do_update(self, method, api_key, report):
         self._info("Preparing keypair…", report)
+        repaired = repair_key_permissions(self.private_key_file, self.cert_file)
+        if repaired:
+            repaired_names = ", ".join(path.name for path in repaired)
+            self._info(f"Secured SSH permissions: {repaired_names}", report)
         public_key = ensure_keypair(self.private_key_file)
 
         if method == "apikey":
@@ -466,6 +513,11 @@ class MfaAuthenicathionWidget(ipw.VBox):
             await asyncio.sleep(period)
 
     def refresh_info(self):
+        try:
+            repair_key_permissions(self.private_key_file, self.cert_file)
+        except CscsError as exc:
+            self.key_validity_info.show(f"🛑 {exc}", danger_level="alert-danger")
+            return
         if not self.cert_exists():
             self.key_validity_info.show(
                 "🚫 No CSCS SSH certificate found.", danger_level="alert-danger"
