@@ -22,6 +22,8 @@ SIGN_URL = "https://authx-gateway.svc.cscs.ch/api-ssh-service/api/v1/ssh-keys/si
 SA_TOKEN_URL = "https://authx-gateway.svc.cscs.ch/api-service-account/api/v1/auth/token"
 PKCE_CLIENT_ID = "authx-cli"
 DEFAULT_HEADERS = {"X-Client-Type": "cli"}
+DISCOVERY_RETRY_DELAYS = (1, 2)
+MAX_POLL_INTERVAL = 60
 
 
 log = logging.getLogger(__name__)
@@ -108,14 +110,20 @@ class HeaderWarning(ipw.HTML):
 
 def discover_oidc():
     """Fetch device_authorization_endpoint and token_endpoint from the issuer."""
-    resp = requests.get(
-        f"{ISSUER_URL}/.well-known/openid-configuration",
-        headers=DEFAULT_HEADERS,
-        timeout=10,
-    )
-    resp.raise_for_status()
-    doc = resp.json()
-    return doc["device_authorization_endpoint"], doc["token_endpoint"]
+    for attempt in range(len(DISCOVERY_RETRY_DELAYS) + 1):
+        try:
+            resp = requests.get(
+                f"{ISSUER_URL}/.well-known/openid-configuration",
+                headers=DEFAULT_HEADERS,
+                timeout=10,
+            )
+            resp.raise_for_status()
+            doc = resp.json()
+            return doc["device_authorization_endpoint"], doc["token_endpoint"]
+        except (requests.ConnectionError, requests.Timeout):
+            if attempt == len(DISCOVERY_RETRY_DELAYS):
+                raise
+            time.sleep(DISCOVERY_RETRY_DELAYS[attempt])
 
 
 def request_device_code(device_endpoint):
@@ -132,29 +140,36 @@ def request_device_code(device_endpoint):
 def poll_for_token(token_endpoint, device_code, interval, deadline):
     """Poll token endpoint until the user authorizes or the code expires."""
     interval = max(interval, 1)
-    while time.monotonic() < deadline:
-        resp = requests.post(
-            token_endpoint,
-            data={
-                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-                "device_code": device_code,
-                "client_id": PKCE_CLIENT_ID,
-            },
-            headers=DEFAULT_HEADERS,
-            timeout=10,
-        )
-        if resp.status_code == 200:
-            return resp.json()["access_token"]
-        err = resp.json().get("error")
-        if err == "authorization_pending":
-            pass
-        elif err == "slow_down":
-            interval += 5
-        elif err == "expired_token":
-            raise DeviceCodeExpiredError()
-        else:
-            raise TokenPollError(err or resp.text)
-        time.sleep(interval)
+    with requests.Session() as session:
+        while time.monotonic() < deadline:
+            time.sleep(interval)
+            if time.monotonic() >= deadline:
+                break
+            try:
+                resp = session.post(
+                    token_endpoint,
+                    data={
+                        "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                        "device_code": device_code,
+                        "client_id": PKCE_CLIENT_ID,
+                    },
+                    headers=DEFAULT_HEADERS,
+                    timeout=10,
+                )
+            except (requests.ConnectionError, requests.Timeout):
+                interval = min(interval * 2, MAX_POLL_INTERVAL)
+                continue
+            if resp.status_code == 200:
+                return resp.json()["access_token"]
+            err = resp.json().get("error")
+            if err == "authorization_pending":
+                pass
+            elif err == "slow_down":
+                interval += 5
+            elif err == "expired_token":
+                raise DeviceCodeExpiredError()
+            else:
+                raise TokenPollError(err or resp.text)
     raise DeviceTimeoutError()
 
 
