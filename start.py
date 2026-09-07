@@ -118,12 +118,13 @@ def discover_oidc():
                 timeout=10,
             )
             resp.raise_for_status()
-            doc = resp.json()
-            return doc["device_authorization_endpoint"], doc["token_endpoint"]
         except (requests.ConnectionError, requests.Timeout):
             if attempt == len(DISCOVERY_RETRY_DELAYS):
                 raise
             time.sleep(DISCOVERY_RETRY_DELAYS[attempt])
+        else:
+            doc = resp.json()
+            return doc["device_authorization_endpoint"], doc["token_endpoint"]
 
 
 def request_device_code(device_endpoint):
