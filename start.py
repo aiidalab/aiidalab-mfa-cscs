@@ -22,7 +22,7 @@ SIGN_URL = "https://authx-gateway.svc.cscs.ch/api-ssh-service/api/v1/ssh-keys/si
 SA_TOKEN_URL = "https://authx-gateway.svc.cscs.ch/api-service-account/api/v1/auth/token"
 PKCE_CLIENT_ID = "authx-cli"
 DEFAULT_HEADERS = {"X-Client-Type": "cli"}
-DISCOVERY_RETRY_DELAYS = (1, 2)
+DISCOVERY_RETRY_DELAYS = (2, 4, 8)
 MAX_POLL_INTERVAL = 60
 
 

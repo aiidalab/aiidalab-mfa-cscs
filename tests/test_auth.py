@@ -23,7 +23,7 @@ class OidcDiscoveryTests(unittest.TestCase):
             endpoints, ("https://example.com/device", "https://example.com/token")
         )
         self.assertEqual(get.call_count, 2)
-        sleep.assert_called_once_with(1)
+        sleep.assert_called_once_with(2)
 
     @patch("start.time.sleep")
     @patch("start.requests.get", side_effect=requests.ConnectTimeout())
@@ -31,8 +31,8 @@ class OidcDiscoveryTests(unittest.TestCase):
         with self.assertRaises(requests.ConnectTimeout):
             start.discover_oidc()
 
-        self.assertEqual(get.call_count, 3)
-        self.assertEqual(sleep.call_args_list, [call(1), call(2)])
+        self.assertEqual(get.call_count, 4)
+        self.assertEqual(sleep.call_args_list, [call(2), call(4), call(8)])
 
 
 class TokenPollingTests(unittest.TestCase):
