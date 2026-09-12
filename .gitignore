@@ -4,6 +4,9 @@
 *~
 .*.ipynb
 .DS_Store
+
+# Numbered copies created when AiiDAlab reopens running notebooks
+*-[0-9]*.ipynb
 .ipynb_checkpoints/*
 .vscode
 __pycache__/
